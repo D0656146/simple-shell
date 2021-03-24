@@ -1,0 +1,29 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "cppbuild",
+			"label": "build",
+			"command": "gcc",
+			"args": [
+				"${workspaceFolder}/src/*.c",
+				"-o",
+				"${workspaceFolder}/bin/simple-shell",
+				"-g",
+				"-Wall",
+				"-static-libgcc",
+				"-std=c11",
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+		}
+	]
+}
