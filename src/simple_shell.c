@@ -53,11 +53,28 @@ bool read_parse_command_RP(char command[MAX_CMD_LENGTH + 2],
 void run_shell() {
     printf("~ Simple Shell ~ \n");
     while (true) {
-        printf("$ ");
+        // get and show current working directory
+        char cwd[MAX_PATH_LENGTH];
+        if (!getcwd(cwd, MAX_PATH_LENGTH)) {
+            printf("Failed to get working diretory. \n");
+            exit(EXIT_FAILURE);
+        }
+        printf("Shell: %s$ ", cwd);
         // read and parse command
         char command[MAX_CMD_LENGTH + 2];                     // for '\n' and '\0'
         char subcmds[MAX_SUBCMD_NUM][MAX_SUBCMD_LENGTH + 1];  // for '\0'
         if (!read_parse_command_RP(command, subcmds)) {
+            continue;
+        }
+        // cd
+        if (strcmp(subcmds[0], "cd") == 0) {
+            if (strlen(subcmds[1]) == 0) {
+                printf("Path is not given. \n");
+                continue;
+            }
+            if (chdir(subcmds[1]) == -1) {
+                printf("Failed to change directory to %s \n", subcmds[1]);
+            }
             continue;
         }
     }
