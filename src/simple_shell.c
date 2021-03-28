@@ -1,7 +1,10 @@
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define MAX_PATH_LENGTH 256
@@ -9,7 +12,7 @@
 #define MAX_SUBCMD_LENGTH 128
 #define MAX_SUBCMD_NUM 32
 
-bool read_parse_command_RP(char command[MAX_CMD_LENGTH + 2],
+bool read_parse_command_RP(char command[MAX_CMD_LENGTH + 3],
                            char subcmds[MAX_SUBCMD_NUM][MAX_SUBCMD_LENGTH + 1]) {
     memset(command, 0, sizeof(char) * MAX_CMD_LENGTH + 2);
     memset(subcmds, 0, sizeof(char) * MAX_SUBCMD_NUM * (MAX_SUBCMD_LENGTH + 1));
@@ -56,12 +59,12 @@ void run_shell() {
         // get and show current working directory
         char cwd[MAX_PATH_LENGTH];
         if (!getcwd(cwd, MAX_PATH_LENGTH)) {
-            printf("Failed to get working diretory. \n");
+            perror("");
             exit(EXIT_FAILURE);
         }
         printf("Shell: %s$ ", cwd);
         // read and parse command
-        char command[MAX_CMD_LENGTH + 2];                     // for '\n' and '\0'
+        char command[MAX_CMD_LENGTH + 3];                     // for '\n', '\0' and check
         char subcmds[MAX_SUBCMD_NUM][MAX_SUBCMD_LENGTH + 1];  // for '\0'
         if (!read_parse_command_RP(command, subcmds)) {
             continue;
@@ -73,9 +76,38 @@ void run_shell() {
                 continue;
             }
             if (chdir(subcmds[1]) == -1) {
-                printf("Failed to change directory to %s \n", subcmds[1]);
+                perror("");
             }
             continue;
+        }
+        // execute process
+        // ignore SIGCHLD to prevent zombie processes
+        if (signal(SIGCHLD, SIG_IGN) == SIG_ERR) {
+            perror("");
+            exit(EXIT_FAILURE);
+        }
+        // fork and run
+        pid_t pid = fork();
+        if (pid == -1) {
+            perror("");
+        } else if (pid == 0) {
+            // child process
+            char* subcmds_ptr[MAX_SUBCMD_NUM];
+            for (int c = 0; c < MAX_SUBCMD_NUM; c++) {
+                subcmds_ptr[c] = subcmds[c];
+                printf("%s ", subcmds_ptr[c]);
+                if (strlen(subcmds[c]) == 0) {
+                    subcmds_ptr[c] = NULL;
+                    break;
+                }
+            }
+            if (execvp(subcmds_ptr[0], subcmds_ptr) == -1) {
+                perror("");
+                exit(EXIT_FAILURE);
+            }
+        } else {
+            // parent process
+            wait(NULL);
         }
     }
 }
