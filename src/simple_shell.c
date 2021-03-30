@@ -90,6 +90,58 @@ void OutputRedirection(char filename[]) {
     }
 }
 
+void ChildProcess(int cmd_start, char subcmds[MAX_SUBCMD_NUM][MAX_SUBCMD_LENGTH + 1]) {
+    char* subcmds_ptr[MAX_SUBCMD_NUM];
+    for (int c_ptr = 0; cmd_start < MAX_SUBCMD_NUM; cmd_start++, c_ptr++) {
+        subcmds_ptr[c_ptr] = subcmds[cmd_start];
+        // output redirection
+        if (strcmp(subcmds[cmd_start], ">") == 0) {
+            cmd_start++;
+            OutputRedirection(subcmds[cmd_start]);
+            c_ptr--;
+            continue;
+        }
+        // input redirection
+        if (strcmp(subcmds[cmd_start], "<") == 0) {
+            cmd_start++;
+            InputRedirection(subcmds[cmd_start]);
+            c_ptr--;
+            continue;
+        }
+        // pipeline
+        if (strcmp(subcmds[cmd_start], "|") == 0) {
+            int fd[2];
+            pipe(fd);
+            pid_t pid = fork();
+            if (pid == -1) {
+                perror("");
+            } else if (pid == 0) {
+                // child process
+                close(fd[1]);
+                dup2(fd[0], STDIN_FILENO);
+                close(fd[0]);
+                ChildProcess(cmd_start + 1, subcmds);
+            } else {
+                // parent process
+                close(fd[0]);
+                dup2(fd[1], STDOUT_FILENO);
+                close(fd[1]);
+                subcmds_ptr[c_ptr] = NULL;
+                break;
+            }
+        }
+        // end of command
+        if (strlen(subcmds[cmd_start]) == 0) {
+            subcmds_ptr[c_ptr] = NULL;
+            break;
+        }
+    }
+    if (execvp(subcmds_ptr[0], subcmds_ptr) == -1) {
+        perror("");
+        exit(EXIT_FAILURE);
+    }
+}
+
 void RunShell() {
     printf("~ Simple Shell ~ \n");
     while (true) {
@@ -128,34 +180,7 @@ void RunShell() {
         if (pid == -1) {
             perror("");
         } else if (pid == 0) {
-            // child process
-            char* subcmds_ptr[MAX_SUBCMD_NUM];
-            for (int c_arr = 0, c_ptr = 0; c_arr < MAX_SUBCMD_NUM; c_arr++, c_ptr++) {
-                subcmds_ptr[c_ptr] = subcmds[c_arr];
-                // output redirection
-                if (strcmp(subcmds[c_arr], ">") == 0) {
-                    c_arr++;
-                    OutputRedirection(subcmds[c_arr]);
-                    c_ptr--;
-                    continue;
-                }
-                // input redirection
-                if (strcmp(subcmds[c_arr], "<") == 0) {
-                    c_arr++;
-                    InputRedirection(subcmds[c_arr]);
-                    c_ptr--;
-                    continue;
-                }
-                // end of command
-                if (strlen(subcmds[c_arr]) == 0) {
-                    subcmds_ptr[c_ptr] = NULL;
-                    break;
-                }
-            }
-            if (execvp(subcmds_ptr[0], subcmds_ptr) == -1) {
-                perror("");
-                exit(EXIT_FAILURE);
-            }
+            ChildProcess(0, subcmds);
         } else {
             // parent process
             wait(NULL);
