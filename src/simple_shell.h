@@ -1,6 +1,6 @@
 #ifndef SIMPLE_SHELL_
 #define SIMPLE_SHELL_
 
-void run_shell();
+void RunShell();
 
 #endif // SIMPLE_SHELL_
