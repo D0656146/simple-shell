@@ -14,18 +14,14 @@
 #define MAX_SUBCMD_LENGTH 128
 #define MAX_SUBCMD_NUM 32
 
-bool ReadParseCommand_RP(char command[MAX_CMD_LENGTH + 3],
-                         char subcmds[MAX_SUBCMD_NUM][MAX_SUBCMD_LENGTH + 1]) {
-    memset(command, 0, sizeof(char) * MAX_CMD_LENGTH + 2);
+int ReadParseCommand_RP(char command[MAX_CMD_LENGTH + 3],
+                        char subcmds[MAX_SUBCMD_NUM][MAX_SUBCMD_LENGTH + 1]) {
+    memset(command, 0, sizeof(char) * MAX_CMD_LENGTH + 3);
     memset(subcmds, 0, sizeof(char) * MAX_SUBCMD_NUM * (MAX_SUBCMD_LENGTH + 1));
     // read command
     if (!fgets(command, MAX_CMD_LENGTH + 3, stdin)) {
         printf("STDIN reaches EOF. \n");
         exit(EXIT_FAILURE);
-    }
-    // no command
-    if (command[0] == '\n') {
-        return false;
     }
     // flush stdin if command is too long
     if (command[MAX_CMD_LENGTH + 1] != '\0') {
@@ -33,26 +29,27 @@ bool ReadParseCommand_RP(char command[MAX_CMD_LENGTH + 3],
         char flusher;
         while ((flusher = getchar()) != '\n' && flusher != EOF)
             ;
-        return false;
+        return 0;
     }
     // split command
+    int num_subcmds = 0;
     const char* whitespaces = " \t\n\v\f\r";
     char* subcmd = strtok(command, whitespaces);
-    for (int num_commands = 0; subcmd != NULL; num_commands++) {
+    for (; subcmd != NULL; num_subcmds++) {
         // too much sub commands
-        if (num_commands >= MAX_SUBCMD_NUM) {
+        if (num_subcmds >= MAX_SUBCMD_NUM) {
             printf("There are too much sub commands. \n");
-            return false;
+            return 0;
         }
-        strncpy(subcmds[num_commands], subcmd, MAX_SUBCMD_LENGTH + 1);
+        strncpy(subcmds[num_subcmds], subcmd, MAX_SUBCMD_LENGTH + 1);
         // sub command is too long
-        if (subcmds[num_commands][MAX_SUBCMD_LENGTH] != '\0') {
+        if (subcmds[num_subcmds][MAX_SUBCMD_LENGTH] != '\0') {
             printf("The sub command is too long. \n");
-            return false;
+            return 0;
         }
         subcmd = strtok(NULL, whitespaces);
     }
-    return true;
+    return num_subcmds;
 }
 
 void InputRedirection(char filename[]) {
@@ -91,6 +88,12 @@ void OutputRedirection(char filename[]) {
 }
 
 void ChildProcess(int cmd_start, char subcmds[MAX_SUBCMD_NUM][MAX_SUBCMD_LENGTH + 1]) {
+    // ignore SIGCHLD to prevent zombie processes
+    if (signal(SIGCHLD, SIG_IGN) == SIG_ERR) {
+        perror("");
+        exit(EXIT_FAILURE);
+    }
+    // parse sub command started at index of cmd_start
     char* subcmds_ptr[MAX_SUBCMD_NUM];
     for (int c_ptr = 0; cmd_start < MAX_SUBCMD_NUM; cmd_start++, c_ptr++) {
         subcmds_ptr[c_ptr] = subcmds[cmd_start];
@@ -111,27 +114,48 @@ void ChildProcess(int cmd_start, char subcmds[MAX_SUBCMD_NUM][MAX_SUBCMD_LENGTH 
         // pipeline
         if (strcmp(subcmds[cmd_start], "|") == 0) {
             int fd[2];
-            pipe(fd);
+            if (pipe(fd) == -1) {
+                perror("");
+                exit(EXIT_FAILURE);
+            }
             pid_t pid = fork();
             if (pid == -1) {
                 perror("");
             } else if (pid == 0) {
                 // child process
-                close(fd[1]);
-                dup2(fd[0], STDIN_FILENO);
-                close(fd[0]);
+                if (close(fd[1]) == -1) {
+                    perror("");
+                    exit(EXIT_FAILURE);
+                }
+                if (dup2(fd[0], STDIN_FILENO) == -1) {
+                    perror("");
+                    exit(EXIT_FAILURE);
+                }
+                if (close(fd[0]) == -1) {
+                    perror("");
+                    exit(EXIT_FAILURE);
+                }
                 ChildProcess(cmd_start + 1, subcmds);
             } else {
                 // parent process
-                close(fd[0]);
-                dup2(fd[1], STDOUT_FILENO);
-                close(fd[1]);
+                if (close(fd[0]) == -1) {
+                    perror("");
+                    exit(EXIT_FAILURE);
+                }
+                if (dup2(fd[1], STDOUT_FILENO) == -1) {
+                    perror("");
+                    exit(EXIT_FAILURE);
+                }
+                if (close(fd[1]) == -1) {
+                    perror("");
+                    exit(EXIT_FAILURE);
+                }
                 subcmds_ptr[c_ptr] = NULL;
                 break;
             }
         }
         // end of command
-        if (strlen(subcmds[cmd_start]) == 0) {
+        if (strlen(subcmds[cmd_start]) == 0 || strcmp(subcmds[cmd_start], "&") == 0) {
             subcmds_ptr[c_ptr] = NULL;
             break;
         }
@@ -155,7 +179,8 @@ void RunShell() {
         // read and parse command
         char command[MAX_CMD_LENGTH + 3];                     // for '\n', '\0' and check
         char subcmds[MAX_SUBCMD_NUM][MAX_SUBCMD_LENGTH + 1];  // for '\0'
-        if (!ReadParseCommand_RP(command, subcmds)) {
+        int num_subcmds = ReadParseCommand_RP(command, subcmds);
+        if (num_subcmds == 0) {
             continue;
         }
         // cd
@@ -183,7 +208,9 @@ void RunShell() {
             ChildProcess(0, subcmds);
         } else {
             // parent process
-            wait(NULL);
+            if (strcmp(subcmds[num_subcmds - 1], "&") != 0) {
+                wait(NULL);
+            }
         }
     }
 }
